@@ -63,23 +63,39 @@ export default function QuizResultsPage() {
     setSelectedSession(sessionId);
     setLoadingResults(true);
 
-    const { data } = await supabase
+    // Fetch responses
+    const { data: responses, error } = await supabase
       .from("quiz_responses")
-      .select("profile_id, is_correct, response_time_ms, profiles(first_name, last_name, avatar_url)")
+      .select("profile_id, is_correct, response_time_ms")
       .eq("session_id", sessionId);
 
-    if (!data) { setLoadingResults(false); return; }
+    if (error || !responses || responses.length === 0) {
+      setResults([]);
+      setLoadingResults(false);
+      return;
+    }
+
+    // Get unique profile IDs and fetch their profiles
+    const profileIds = [...new Set(responses.map((r: any) => r.profile_id))];
+    const { data: profilesData } = await supabase
+      .from("profiles")
+      .select("id, first_name, last_name, avatar_url")
+      .in("id", profileIds);
+
+    const profileMap: Record<string, any> = {};
+    (profilesData || []).forEach((p: any) => { profileMap[p.id] = p; });
 
     // Group by player
     const grouped: Record<string, PlayerResult> = {};
-    for (const row of data as any[]) {
+    for (const row of responses as any[]) {
       const pid = row.profile_id;
+      const prof = profileMap[pid] || {};
       if (!grouped[pid]) {
         grouped[pid] = {
           profile_id: pid,
-          first_name: row.profiles?.first_name || "Jugador",
-          last_name: row.profiles?.last_name || "",
-          avatar_url: row.profiles?.avatar_url || null,
+          first_name: prof.first_name || "Jugador",
+          last_name: prof.last_name || "",
+          avatar_url: prof.avatar_url || null,
           correct: 0,
           total: 0,
           score_pct: 0,
@@ -93,11 +109,13 @@ export default function QuizResultsPage() {
 
     const playerList = Object.values(grouped).map((p) => ({
       ...p,
-      score_pct: totalQuestions > 0 ? Math.round((p.correct / totalQuestions) * 100) : Math.round((p.correct / p.total) * 100),
+      score_pct: totalQuestions > 0
+        ? Math.round((p.correct / totalQuestions) * 100)
+        : p.total > 0 ? Math.round((p.correct / p.total) * 100) : 0,
       avg_time_ms: p.total > 0 ? Math.round(p.avg_time_ms / p.total) : 0,
     }));
 
-    // Sort by score desc, then by avg_time asc (faster wins ties)
+    // Sort: score desc, then fastest first
     playerList.sort((a, b) => b.score_pct - a.score_pct || a.avg_time_ms - b.avg_time_ms);
 
     setResults(playerList);
