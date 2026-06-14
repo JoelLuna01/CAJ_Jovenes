@@ -99,6 +99,9 @@ export default function PrayerRequestsPage() {
         );
         setAnimatedId(request.id);
         setTimeout(() => setAnimatedId(null), 600);
+      } else {
+        console.error("Error al quitar oración:", error);
+        alert("Error al quitar oración: " + error.message);
       }
     } else {
       const { error } = await supabase
@@ -115,6 +118,9 @@ export default function PrayerRequestsPage() {
         );
         setAnimatedId(request.id);
         setTimeout(() => setAnimatedId(null), 600);
+      } else {
+        console.error("Error al unirse en oración:", error);
+        alert("Error al unirse en oración: " + error.message);
       }
     }
     setActionId(null);
