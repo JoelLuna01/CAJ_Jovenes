@@ -123,6 +123,13 @@ export default function AdminQuizzesPage() {
                         ⚡ Iniciar en Vivo
                       </button>
                       <button
+                        onClick={() => router.push(`/admin/quizzes/results/${quiz.id}`)}
+                        className="flex-1 text-xs font-semibold py-2 rounded-lg transition-all"
+                        style={{ background: "rgba(52,211,153,0.1)", color: "#34d399", border: "1px solid rgba(52,211,153,0.2)" }}
+                      >
+                        📊 Resultados
+                      </button>
+                      <button
                         onClick={() => handleDelete(quiz.id)}
                         disabled={deletingId === quiz.id}
                         className="w-10 h-8 flex items-center justify-center rounded-lg transition-all"
