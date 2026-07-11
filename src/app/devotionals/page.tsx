@@ -21,6 +21,11 @@ export default function DevotionalsPage() {
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Reflection diary states
+  const [reflectionText, setReflectionText] = useState("");
+  const [savingReflection, setSavingReflection] = useState(false);
+  const [reflectionNoteId, setReflectionNoteId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!isLoading && !user) router.replace("/auth/login");
   }, [user, isLoading, router]);
@@ -55,6 +60,40 @@ export default function DevotionalsPage() {
     fetchDevotionalsAndCompletions();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
+
+  // Handle URL redirect parameter
+  useEffect(() => {
+    if (devotionals.length > 0) {
+      const searchParams = new URLSearchParams(window.location.search);
+      const devoId = searchParams.get("id");
+      if (devoId) {
+        const found = devotionals.find((d) => d.id === devoId);
+        if (found) setSelected(found);
+      }
+    }
+  }, [devotionals]);
+
+  // Fetch linked reflection note when a devotional is selected
+  useEffect(() => {
+    if (selected && profile) {
+      supabase
+        .from("notes")
+        .select("id, content")
+        .eq("user_id", profile.id)
+        .eq("devotional_id", selected.id)
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setReflectionText(data.content);
+            setReflectionNoteId(data.id);
+          } else {
+            setReflectionText("");
+            setReflectionNoteId(null);
+          }
+        });
+    }
+  }, [selected, profile]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -123,6 +162,50 @@ export default function DevotionalsPage() {
     }
   };
 
+  const handleSaveReflection = async () => {
+    if (!selected || !profile) return;
+    setSavingReflection(true);
+
+    try {
+      if (reflectionNoteId) {
+        // Update existing reflection note
+        const { error } = await supabase
+          .from("notes")
+          .update({
+            content: reflectionText.trim(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", reflectionNoteId);
+
+        if (error) throw error;
+        alert("¡Reflexión guardada en tu Diario Espiritual!");
+      } else {
+        // Insert new note
+        const { data, error } = await supabase
+          .from("notes")
+          .insert({
+            user_id: profile.id,
+            title: `Reflexión: ${selected.title}`,
+            content: reflectionText.trim(),
+            devotional_id: selected.id
+          })
+          .select("id")
+          .single();
+
+        if (error) throw error;
+        if (data) {
+          setReflectionNoteId(data.id);
+          alert("¡Reflexión guardada en tu Diario Espiritual!");
+        }
+      }
+    } catch (err: any) {
+      console.error("Error al guardar reflexión:", err);
+      alert("Error al guardar reflexión: " + err.message);
+    } finally {
+      setSavingReflection(false);
+    }
+  };
+
   if (isLoading || !user) return null;
 
   const userCompletion = selected ? completionsMap[selected.id] : null;
@@ -176,6 +259,33 @@ export default function DevotionalsPage() {
 
             <div className="prose prose-invert max-w-none text-sm leading-relaxed" style={{ color: "#94a3b8" }}>
               {selected.content.split("\n").map((p, i) => p ? <p key={i} className="mb-4">{p}</p> : <br key={i} />)}
+            </div>
+
+            {/* Reflection diary section */}
+            <div className="pt-4 border-t" style={{ borderColor: "#1e293b" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm">📖</span>
+                <h3 className="text-sm font-semibold text-white">Mi Diario Espiritual / Reflexión</h3>
+              </div>
+              <p className="text-[11px] mb-3" style={{ color: "#475569" }}>
+                Escribe lo que Dios habló a tu corazón en esta lectura. Se guardará de forma privada en tu diario.
+              </p>
+              <textarea
+                value={reflectionText}
+                onChange={(e) => setReflectionText(e.target.value)}
+                placeholder="¿Qué te enseñó Dios hoy a través de esta lectura?..."
+                className="input-field py-3 text-xs"
+                rows={4}
+                style={{ resize: "none" }}
+              />
+              <button
+                onClick={handleSaveReflection}
+                disabled={savingReflection || !reflectionText.trim()}
+                className="btn-primary w-full py-2.5 mt-2 text-xs flex items-center justify-center gap-1.5"
+                style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", color: "#818cf8", boxShadow: "none" }}
+              >
+                {savingReflection ? "Guardando..." : "Guardar Reflexión"}
+              </button>
             </div>
 
             {/* Evidence & feedback area */}

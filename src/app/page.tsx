@@ -104,6 +104,7 @@ export default function Home() {
   const [stats, setStats] = useState({ streak: 0, devotionals: 0, prayers: 0 });
   const [verse, setVerse] = useState<VerseData>({ text: "Cargando versículo…", reference: "" });
   const [verseLoading, setVerseLoading] = useState(true);
+  const [activeNotifications, setActiveNotifications] = useState<any[]>([]);
 
   // Redirect only if we're sure there's no user (after hydration)
   useEffect(() => {
@@ -129,7 +130,6 @@ export default function Home() {
       }
 
       if (data.is_auto) {
-        // Fetch from external API
         try {
           const response = await fetch("https://bible-api.com/john+3:16?translation=rve");
           const json = await response.json();
@@ -138,7 +138,6 @@ export default function Home() {
             reference: json.reference || data.verse_reference,
           });
         } catch {
-          // Fallback to what's stored
           setVerse({ text: data.verse_text, reference: data.verse_reference });
         }
       } else {
@@ -175,7 +174,182 @@ export default function Home() {
     });
   }, [profile]);
 
-  // Show skeleton while waiting for user from localStorage
+  // Fetch checked devotionals feedback notifications
+  useEffect(() => {
+    if (!profile) return;
+    
+    const checkNotifications = async () => {
+      const { data, error } = await supabase
+        .from("devotional_completions")
+        .select("id, status, feedback, devotional_id")
+        .eq("user_id", profile.id)
+        .neq("status", "PENDING"); // APPROVED or REJECTED
+
+      if (error || !data) return;
+
+      // Filter by seen notifications stored in localStorage
+      const seenRaw = localStorage.getItem(`seen_devotional_notifications_${profile.id}`);
+      const seenIds = seenRaw ? JSON.parse(seenRaw) : [];
+      const unseen = data.filter((c: any) => !seenIds.includes(c.id));
+
+      if (unseen.length > 0) {
+        // Fetch devotionals titles manually
+        const devoIds = unseen.map((u: any) => u.devotional_id);
+        const { data: devos } = await supabase
+          .from("devotionals")
+          .select("id, title")
+          .in("id", devoIds);
+
+        const titleMap: Record<string, string> = {};
+        (devos || []).forEach((d: any) => { titleMap[d.id] = d.title; });
+
+        const mapped = unseen.map((c: any) => ({
+          id: c.id,
+          devotionalId: c.devotional_id,
+          title: titleMap[c.devotional_id] || "Devocional",
+          status: c.status,
+          feedback: c.feedback
+        }));
+
+        setActiveNotifications(mapped);
+      }
+    };
+
+    checkNotifications();
+  }, [profile]);
+
+  // Share daily verse options
+  const handleShareWhatsApp = () => {
+    const text = `*Versículo del Día - CAJ Jóvenes*\n\n"${verse.text}"\n— ${verse.reference}`;
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
+  };
+
+  const handleNativeShare = async () => {
+    const shareData = {
+      title: "Versículo del Día - CAJ Jóvenes",
+      text: `"${verse.text}" — ${verse.reference}`,
+      url: window.location.origin
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.log("Error al compartir:", err);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(`"${verse.text}" — ${verse.reference}`);
+        alert("¡Versículo copiado al portapapeles!");
+      } catch (err) {
+        alert("No se pudo copiar el texto.");
+      }
+    }
+  };
+
+  const handleDownloadCard = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1080;
+    canvas.height = 1920;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // 1. Background gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, 1920);
+    gradient.addColorStop(0, "#0a0f1e"); // dark navy
+    gradient.addColorStop(0.5, "#1e1b4b"); // deep indigo
+    gradient.addColorStop(1, "#0a0f1e");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 1080, 1920);
+
+    // 2. Glow effect
+    const radial = ctx.createRadialGradient(540, 960, 50, 540, 960, 700);
+    radial.addColorStop(0, "rgba(99, 102, 241, 0.15)");
+    radial.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = radial;
+    ctx.fillRect(0, 0, 1080, 1920);
+
+    // 3. Top Title
+    ctx.font = "bold 32px sans-serif";
+    ctx.fillStyle = "#818cf8";
+    ctx.textAlign = "center";
+    ctx.fillText("VERSÍCULO DEL DÍA", 540, 320);
+
+    ctx.font = "bold 24px sans-serif";
+    ctx.fillStyle = "#475569";
+    ctx.fillText("COMUNIDAD CAJ JÓVENES", 540, 365);
+
+    // 4. Quotation marks background
+    ctx.font = "italic 320px serif";
+    ctx.fillStyle = "rgba(99, 102, 241, 0.05)";
+    ctx.fillText("“", 540, 750);
+
+    // 5. Wrap text logic
+    ctx.font = "500 52px sans-serif";
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+
+    const text = `"${verse.text}"`;
+    const maxWidth = 860;
+    const lineHeight = 75;
+    const words = text.split(" ");
+    let line = "";
+    const lines = [];
+
+    for (let n = 0; n < words.length; n++) {
+      const testLine = line + words[n] + " ";
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > maxWidth && n > 0) {
+        lines.push(line);
+        line = words[n] + " ";
+      } else {
+        line = testLine;
+      }
+    }
+    lines.push(line);
+
+    // Center text vertically
+    const totalHeight = lines.length * lineHeight;
+    let startY = 960 - (totalHeight / 2);
+
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i].trim(), 540, startY);
+      startY += lineHeight;
+    }
+
+    // 6. Cita
+    if (verse.reference) {
+      ctx.font = "bold 44px sans-serif";
+      ctx.fillStyle = "#6366f1";
+      ctx.fillText(`— ${verse.reference}`, 540, startY + 70);
+    }
+
+    // 7. Footer decoration
+    ctx.font = "bold 32px sans-serif";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.fillText("✝", 540, 1680);
+
+    ctx.font = "medium 20px sans-serif";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+    ctx.fillText("Nutre tu espíritu diariamente", 540, 1725);
+
+    // 8. Download trigger
+    const url = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.download = `Versiculo_${verse.reference.replace(/[\s:]/g, "_")}.png`;
+    a.href = url;
+    a.click();
+  };
+
+  const handleDismissNotification = (id: string) => {
+    if (!profile) return;
+    const seenRaw = localStorage.getItem(`seen_devotional_notifications_${profile.id}`);
+    const seenIds = seenRaw ? JSON.parse(seenRaw) : [];
+    seenIds.push(id);
+    localStorage.setItem(`seen_devotional_notifications_${profile.id}`, JSON.stringify(seenIds));
+    setActiveNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
   if (!user) {
     return (
       <main className="flex flex-col min-h-screen safe-top p-5 max-w-lg mx-auto">
@@ -188,7 +362,7 @@ export default function Home() {
         </div>
         <div className="h-24 rounded-2xl animate-shimmer mb-6" />
         <div className="grid grid-cols-2 gap-3">
-          {[1,2,3,4].map(i => <div key={i} className="h-28 rounded-2xl animate-shimmer" />)}
+          {[1, 2, 3, 4].map(i => <div key={i} className="h-28 rounded-2xl animate-shimmer" />)}
         </div>
       </main>
     );
@@ -198,9 +372,9 @@ export default function Home() {
   const streakEmoji = stats.streak >= 7 ? "🔥🔥" : stats.streak >= 3 ? "🔥" : stats.streak >= 1 ? "✨" : "💤";
 
   return (
-    <main className="flex flex-col min-h-screen safe-top p-5 max-w-lg mx-auto">
+    <main className="flex flex-col min-h-screen safe-top p-5 max-w-lg mx-auto pb-24">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8 animate-fadeUp">
+      <div className="flex items-center justify-between mb-6 animate-fadeUp">
         <div>
           <p className="text-sm font-medium" style={{ color: "#6366f1" }}>{greeting} 👋</p>
           <h1 className="text-2xl font-bold text-white capitalize">{firstName}</h1>
@@ -215,6 +389,46 @@ export default function Home() {
         </Link>
       </div>
 
+      {/* Devotional Review Notification Banners */}
+      {activeNotifications.map((notif) => (
+        <div
+          key={notif.id}
+          className="mb-4 p-4 rounded-2xl flex items-start gap-3 border animate-fadeUp relative overflow-hidden"
+          style={{
+            background: notif.status === "APPROVED" ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
+            borderColor: notif.status === "APPROVED" ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"
+          }}
+        >
+          <div className="text-xl flex-shrink-0">
+            {notif.status === "APPROVED" ? "🎉" : "❌"}
+          </div>
+          <div className="flex-1 min-w-0 pr-6">
+            <h4 className="text-xs font-bold text-white">
+              {notif.status === "APPROVED" ? "¡Devocional Aprobado!" : "Corrección Requerida"}
+            </h4>
+            <p className="text-[11px] text-slate-300 mt-1 leading-snug">
+              {notif.status === "APPROVED"
+                ? `Tu evidencia para el devocional "${notif.title}" ha sido aprobada con éxito.`
+                : `Tu evidencia para "${notif.title}" necesita cambios.`}
+              {notif.feedback && <span className="block mt-1 font-semibold text-slate-400 italic">"{notif.feedback}"</span>}
+            </p>
+            <Link
+              href={`/devotionals?id=${notif.devotionalId}`}
+              className="inline-block text-[10px] font-bold mt-2 underline"
+              style={{ color: notif.status === "APPROVED" ? "#34d399" : "#f87171" }}
+            >
+              Ver devocional
+            </Link>
+          </div>
+          <button
+            onClick={() => handleDismissNotification(notif.id)}
+            className="absolute top-3 right-3 text-slate-500 hover:text-slate-300 transition-colors text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center bg-slate-950/20"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+
       {/* Verse banner */}
       <div
         className="rounded-2xl p-5 mb-6 animate-fadeUp relative overflow-hidden"
@@ -222,6 +436,7 @@ export default function Home() {
       >
         <div className="absolute right-0 top-0 w-32 h-32 opacity-10" style={{ background: "radial-gradient(circle, #818cf8 0%, transparent 70%)" }} />
         <p className="text-xs font-semibold mb-2" style={{ color: "#a5b4fc" }}>VERSÍCULO DEL DÍA</p>
+        
         {verseLoading ? (
           <div className="space-y-2">
             <div className="h-3.5 rounded animate-shimmer" />
@@ -235,6 +450,28 @@ export default function Home() {
             {verse.reference && (
               <p className="text-xs mt-2" style={{ color: "#6366f1" }}>— {verse.reference}</p>
             )}
+
+            {/* Verse Share actions */}
+            <div className="flex items-center gap-2 mt-4 pt-3 border-t border-indigo-950/30">
+              <button
+                onClick={handleShareWhatsApp}
+                className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2.5 py-1.5 rounded-xl hover:bg-emerald-950/40 transition-all"
+              >
+                🟢 WhatsApp
+              </button>
+              <button
+                onClick={handleNativeShare}
+                className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-950/20 border border-indigo-900/30 px-2.5 py-1.5 rounded-xl hover:bg-indigo-950/40 transition-all"
+              >
+                🔗 Compartir
+              </button>
+              <button
+                onClick={handleDownloadCard}
+                className="flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/20 border border-amber-900/30 px-2.5 py-1.5 rounded-xl hover:bg-amber-950/40 transition-all ml-auto"
+              >
+                📷 Tarjeta PNG
+              </button>
+            </div>
           </>
         )}
       </div>

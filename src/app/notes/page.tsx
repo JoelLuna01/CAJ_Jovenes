@@ -11,6 +11,7 @@ export default function NotesPage() {
   const { user, profile, isLoading } = useAuthStore();
   const router = useRouter();
   const [notes, setNotes] = useState<Note[]>([]);
+  const [devotionalsMap, setDevotionalsMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -28,8 +29,29 @@ export default function NotesPage() {
       .select("*")
       .eq("user_id", profile.id)
       .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        setNotes((data as Note[]) || []);
+      .then(async ({ data }) => {
+        const notesList = (data as Note[]) || [];
+        setNotes(notesList);
+
+        // Fetch referenced devotionals titles
+        const linkedDevoIds = [
+          ...new Set(notesList.filter((n) => n.devotional_id).map((n) => n.devotional_id as string)),
+        ];
+
+        if (linkedDevoIds.length > 0) {
+          const { data: devos } = await supabase
+            .from("devotionals")
+            .select("id, title")
+            .in("id", linkedDevoIds);
+
+          if (devos) {
+            const map: Record<string, string> = {};
+            devos.forEach((d: any) => {
+              map[d.id] = d.title;
+            });
+            setDevotionalsMap(map);
+          }
+        }
         setLoading(false);
       });
   }, [profile]);
@@ -157,6 +179,12 @@ export default function NotesPage() {
                   {new Date(note.created_at).toLocaleDateString("es")}
                 </span>
               </div>
+              {note.devotional_id && devotionalsMap[note.devotional_id] && (
+                <div className="mt-1 flex items-center gap-1 text-[10px] text-indigo-400 font-semibold">
+                  <span>📖</span>
+                  <span>Devocional: {devotionalsMap[note.devotional_id]}</span>
+                </div>
+              )}
               <p className="text-xs mt-2 line-clamp-3 leading-relaxed" style={{ color: "#475569" }}>
                 {note.content}
               </p>

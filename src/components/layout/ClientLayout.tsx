@@ -19,6 +19,12 @@ export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     setMounted(true);
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((reg) => console.log("Service Worker registrado:", reg.scope))
+        .catch((err) => console.error("Error al registrar SW:", err));
+    }
   }, []);
 
   useEffect(() => {
