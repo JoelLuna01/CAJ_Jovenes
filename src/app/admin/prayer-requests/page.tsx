@@ -33,8 +33,13 @@ export default function AdminPrayerRequestsPage() {
 
   const updateStatus = async (id: string, status: "OPEN" | "ANSWERED" | "CLOSED") => {
     setUpdating(id);
-    await supabase.from("prayer_requests").update({ status }).eq("id", id);
-    setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status } : r));
+    const { error } = await supabase.from("prayer_requests").update({ status }).eq("id", id);
+    if (error) {
+      console.error("Error al actualizar petición:", error);
+      alert("Error al actualizar el estado de la petición: " + error.message);
+    } else {
+      setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status } : r));
+    }
     setUpdating(null);
   };
 

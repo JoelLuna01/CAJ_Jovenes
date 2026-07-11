@@ -28,6 +28,11 @@ export interface DevotionalCompletion {
   devotional_id: string;
   user_id: string;
   completed_at: string;
+  image_url?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  feedback?: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
 }
 
 export interface Note {

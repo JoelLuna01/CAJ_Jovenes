@@ -41,7 +41,7 @@ export default function ProfilePage() {
     if (!profile) return;
     const fetchStats = async () => {
       const [devResult, notesResult] = await Promise.all([
-        supabase.from("devotional_completions").select("completed_at").eq("user_id", profile.id),
+        supabase.from("devotional_completions").select("completed_at").eq("user_id", profile.id).eq("status", "APPROVED"),
         supabase.from("notes").select("*", { count: "exact", head: true }).eq("user_id", profile.id),
       ]);
       const dates = (devResult.data || []).map((d: any) => d.completed_at);

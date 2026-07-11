@@ -33,6 +33,7 @@ export default function PrayerRequestsPage() {
     const { data } = await supabase
       .from("prayer_requests")
       .select("*, prayer_joins(user_id)")
+      .neq("status", "CLOSED")
       .order("created_at", { ascending: false });
 
     // Ensure prayer_joins is always an array (never null)

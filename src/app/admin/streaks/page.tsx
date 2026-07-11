@@ -95,6 +95,7 @@ export default function AdminStreaksPage() {
       const { data: completions } = await supabase
         .from("devotional_completions")
         .select("user_id, completed_at")
+        .eq("status", "APPROVED")
         .order("completed_at", { ascending: false });
 
       // Group completions by user

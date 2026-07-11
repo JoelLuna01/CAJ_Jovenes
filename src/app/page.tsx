@@ -157,7 +157,8 @@ export default function Home() {
       supabase
         .from("devotional_completions")
         .select("completed_at")
-        .eq("user_id", profile.id),
+        .eq("user_id", profile.id)
+        .eq("status", "APPROVED"),
       supabase
         .from("prayer_requests")
         .select("*", { count: "exact", head: true })
