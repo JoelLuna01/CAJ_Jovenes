@@ -52,14 +52,54 @@ export default function AdminDevotionalsPage() {
 
   const fetchReviews = async () => {
     setLoadingReviews(true);
-    const { data } = await supabase
+
+    // 1. Get all completions (avoid relational notation which fails without named FK)
+    const { data: completionsData, error: compError } = await supabase
       .from("devotional_completions")
-      .select("*, devotionals(title), profiles(first_name, last_name, avatar_url)")
+      .select("*")
       .order("completed_at", { ascending: false });
-    
-    setReviews((data as any[]) || []);
+
+    if (compError) {
+      console.error("Error al cargar evidencias:", compError);
+      alert("Error al cargar evidencias: " + compError.message);
+      setLoadingReviews(false);
+      return;
+    }
+
+    if (!completionsData || completionsData.length === 0) {
+      setReviews([]);
+      setLoadingReviews(false);
+      return;
+    }
+
+    // 2. Get all unique devotional and profile IDs
+    const devotionalIds = [...new Set(completionsData.map((c: any) => c.devotional_id))];
+    const userIds = [...new Set(completionsData.map((c: any) => c.user_id))];
+
+    // 3. Fetch related devotionals and profiles in parallel
+    const [{ data: devotionalsData }, { data: profilesData }] = await Promise.all([
+      supabase.from("devotionals").select("id, title").in("id", devotionalIds),
+      supabase.from("profiles").select("id, first_name, last_name, avatar_url").in("id", userIds),
+    ]);
+
+    // 4. Build lookup maps
+    const devoMap: Record<string, { title: string }> = {};
+    (devotionalsData || []).forEach((d: any) => { devoMap[d.id] = { title: d.title }; });
+
+    const profileMap: Record<string, { first_name: string; last_name: string; avatar_url: string | null }> = {};
+    (profilesData || []).forEach((p: any) => { profileMap[p.id] = { first_name: p.first_name, last_name: p.last_name, avatar_url: p.avatar_url }; });
+
+    // 5. Merge data manually
+    const merged = completionsData.map((c: any) => ({
+      ...c,
+      devotionals: devoMap[c.devotional_id] || null,
+      profiles: profileMap[c.user_id] || null,
+    }));
+
+    setReviews(merged);
     setLoadingReviews(false);
   };
+
 
   useEffect(() => {
     fetchDevotionals();
